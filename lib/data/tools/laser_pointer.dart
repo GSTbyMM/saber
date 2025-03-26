@@ -15,11 +15,14 @@ class LaserPointer extends Tool {
   @override
   ToolId get toolId => ToolId.laserPointer;
 
-  static const outerColor = Colors.red;
+  static const outerColor = Color(0xFFB71C1C); // Darker red for the border
+  static const innerColor = Colors.white; // Inner white line remains
+
   final pressureEnabled = false;
   final options = StrokeOptions(
-    smoothing: 0.7,
-    streamline: 0.7,
+    size: 2.0, // Thinner stroke size
+    smoothing: 0.8, // Slightly smoother
+    streamline: 0.9, // More aligned stroke
   );
 
   /// List of timings that correspond to the delay between each point
@@ -78,7 +81,7 @@ class LaserPointer extends Tool {
     return stroke;
   }
 
-  static const _fadeOutDelay = Duration(seconds: 2);
+  static const _fadeOutDelay = Duration(milliseconds: 1500); // Faster fade-out
   @visibleForTesting
   static void fadeOutStroke({
     required Stroke stroke,
@@ -89,7 +92,7 @@ class LaserPointer extends Tool {
     await Future.delayed(_fadeOutDelay);
 
     for (final delay in strokePointDelays) {
-      await Future.delayed(delay);
+      await Future.delayed(delay * 0.8); // Reduce delay between points
 
       stroke.popFirstPoint();
       redrawPage();
@@ -135,7 +138,7 @@ class LaserStroke extends Stroke {
   List<Offset>? _innerPolygon;
   List<Offset> get innerPolygon => _innerPolygon ??= getStroke(
         points,
-        options: options.copyWith(size: options.size * 0.4),
+        options: options.copyWith(size: options.size * 0.3), // Thinner inner line
       );
 
   Path? _innerPath;
