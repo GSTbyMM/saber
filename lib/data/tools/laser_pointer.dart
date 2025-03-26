@@ -20,7 +20,7 @@ class LaserPointer extends Tool {
 
   final pressureEnabled = false;
   final options = StrokeOptions(
-    size: 2.0, // Thinner stroke size
+    size: 5.0, // Thinner stroke size
     smoothing: 0.8, // Slightly smoother
     streamline: 0.9, // More aligned stroke
   );
