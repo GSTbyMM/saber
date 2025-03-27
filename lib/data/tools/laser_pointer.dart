@@ -26,18 +26,8 @@ class LaserPointer extends Tool {
     streamline: 0.95, // Higher streamline for more alignment
   );
 
-  /// List of timings that correspond to the delay between each point
-  /// in the stroke. The first point has a delay of 0.
-  ///
-  /// This is used to fade out each point in the stroke one by one.
   List<Duration> strokePointDelays = [];
-
-  /// Stopwatch used to find the time elapsed since the last point.
   final Stopwatch _stopwatch = Stopwatch();
-
-  /// Whether the user is currently drawing with the laser.
-  /// This is used to prevent strokes fading out until the user
-  /// has finished drawing.
   static bool isDrawing = false;
 
   void onDragStart(Offset position, EditorPage page, int pageIndex) {
@@ -60,14 +50,13 @@ class LaserPointer extends Tool {
   void onDragUpdate(Offset position) {
     isDrawing = true;
 
-    // Calculate velocity for dynamic thickness
     final velocity = Pen.currentStroke?.points.isNotEmpty == true
         ? (position - Pen.currentStroke!.points.last).distance
         : 0.0;
     final dynamicSize = (options.size * (1.0 + velocity / 10)).clamp(1.5, 4.0);
 
     Pen.currentStroke?.addPoint(position);
-    Pen.currentStroke?.options.size = dynamicSize; // Adjust thickness dynamically
+    Pen.currentStroke?.options = options.copyWith(size: dynamicSize); // Ensure immutability
     strokePointDelays.add(_stopwatch.elapsed);
     _stopwatch.reset();
   }
@@ -90,7 +79,8 @@ class LaserPointer extends Tool {
     return stroke;
   }
 
-  static const _fadeOutDelay = Duration(milliseconds: 1200); // Faster fade-out
+  static const _fadeOutDelay = Duration(milliseconds: 1200);
+
   @visibleForTesting
   static void fadeOutStroke({
     required Stroke stroke,
@@ -102,9 +92,8 @@ class LaserPointer extends Tool {
 
     for (int i = 0; i < strokePointDelays.length; i++) {
       final delay = strokePointDelays[i];
-      await Future.delayed(delay * 0.7); // Reduce delay between points
+      await Future.delayed(delay * 0.7);
 
-      // Smooth fade-out with dynamic opacity
       stroke.color = stroke.color.withOpacity(
           ((strokePointDelays.length - i) / strokePointDelays.length)
               .clamp(0.0, 1.0));
@@ -148,7 +137,6 @@ class LaserStroke extends Stroke {
     points.addAll(stroke.points);
   }
 
-  // Add gradient and glow effect
   @override
   void draw(Canvas canvas) {
     final paint = Paint()
@@ -157,7 +145,7 @@ class LaserStroke extends Stroke {
         Offset(0, options.size),
         [LaserPointer.innerColor, LaserPointer.outerColor],
       )
-      ..maskFilter = MaskFilter.blur(BlurStyle.normal, options.size * 0.5); // Glow effect
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, options.size * 0.5);
 
     final path = Stroke.smoothPathFromPolygon(highQualityPolygon);
     canvas.drawPath(path, paint);
@@ -166,15 +154,13 @@ class LaserStroke extends Stroke {
   List<Offset>? _innerPolygon;
   List<Offset> get innerPolygon => _innerPolygon ??= getStroke(
         points,
-        options: options.copyWith(size: options.size * 0.25), // Thinner inner line
+        options: options.copyWith(size: options.size * 0.25),
       );
 
   Path? _innerPath;
   Path get innerPath =>
       _innerPath ??= Stroke.smoothPathFromPolygon(innerPolygon);
 
-  /// Disables low quality to make sure the polygon exactly matches
-  /// [innerPolygon].
   @override
   List<Offset> get lowQualityPolygon => highQualityPolygon;
 
