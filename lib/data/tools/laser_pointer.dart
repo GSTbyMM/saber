@@ -15,28 +15,18 @@ class LaserPointer extends Tool {
   @override
   ToolId get toolId => ToolId.laserPointer;
 
-  static const outerColor = Color(0xFFB71C1C); // Darker red for the border
-  static const innerColor = Colors.white; // Inner white line remains
+  static const outerColor = Color(0xFFB71C1C); // Dark red for the outer stroke
+  static const innerColor = Colors.white; // Inner white stroke
 
   final pressureEnabled = false;
   final options = StrokeOptions(
-    size: 5.0, // Thinner stroke size
-    smoothing: 0.8, // Slightly smoother
-    streamline: 0.9, // More aligned stroke
+    size: 5.0, // Initial stroke size
+    smoothing: 0.8,
+    streamline: 0.9,
   );
 
-  /// List of timings that correspond to the delay between each point
-  /// in the stroke. The first point has a delay of 0.
-  ///
-  /// This is used to fade out each point in the stroke one by one.
   List<Duration> strokePointDelays = [];
-
-  /// Stopwatch used to find the time elapsed since the last point.
   final Stopwatch _stopwatch = Stopwatch();
-
-  /// Whether the user is currently drawing with the laser.
-  /// This is used to prevent strokes fading out until the user
-  /// has finished drawing.
   static bool isDrawing = false;
 
   void onDragStart(Offset position, EditorPage page, int pageIndex) {
@@ -61,6 +51,15 @@ class LaserPointer extends Tool {
     Pen.currentStroke?.addPoint(position);
     strokePointDelays.add(_stopwatch.elapsed);
     _stopwatch.reset();
+
+    // Dynamically adjust stroke size based on velocity
+    final velocity = Pen.currentStroke!.points.length > 1
+        ? (Pen.currentStroke!.points.last - Pen.currentStroke!.points[Pen.currentStroke!.points.length - 2]).distance
+        : 0.0;
+
+    Pen.currentStroke!.options = options.copyWith(
+      size: (5.0 + velocity * 0.2).clamp(3.0, 10.0), // Dynamic thickness
+    );
   }
 
   LaserStroke onDragEnd(
@@ -82,6 +81,7 @@ class LaserPointer extends Tool {
   }
 
   static const _fadeOutDelay = Duration(milliseconds: 1500); // Faster fade-out
+
   @visibleForTesting
   static void fadeOutStroke({
     required Stroke stroke,
@@ -92,16 +92,17 @@ class LaserPointer extends Tool {
     await Future.delayed(_fadeOutDelay);
 
     for (final delay in strokePointDelays) {
-      await Future.delayed(delay * 0.8); // Reduce delay between points
+      await Future.delayed(delay * 0.5); // Smoother delay
 
       stroke.popFirstPoint();
+      stroke.color = stroke.color.withOpacity(
+        (stroke.points.length / strokePointDelays.length).clamp(0.0, 1.0),
+      ); // Adjust opacity
       redrawPage();
 
       if (isDrawing) {
-        // if the user starts drawing again, wait until they stop
         const waitTime = Duration(milliseconds: 100);
         while (isDrawing) await Future.delayed(waitTime);
-        // now wait the normal delay before continuing
         await Future.delayed(_fadeOutDelay - waitTime);
       }
     }
@@ -120,33 +121,17 @@ class LaserStroke extends Stroke {
     required EditorPage super.page,
     required super.penType,
   });
-  @visibleForTesting
-  LaserStroke.convertStroke(Stroke stroke)
-      : super(
-          color: stroke.color,
-          pressureEnabled: stroke.pressureEnabled,
-          options: stroke.options
-            ..streamline = 0.7
-            ..smoothing = 0.7,
-          pageIndex: stroke.pageIndex,
-          page: stroke.page,
-          penType: stroke.penType,
-        ) {
-    points.addAll(stroke.points);
-  }
 
   List<Offset>? _innerPolygon;
   List<Offset> get innerPolygon => _innerPolygon ??= getStroke(
         points,
-        options: options.copyWith(size: options.size * 0.3), // Thinner inner line
+        options: options.copyWith(size: options.size * 0.3),
       );
 
   Path? _innerPath;
   Path get innerPath =>
       _innerPath ??= Stroke.smoothPathFromPolygon(innerPolygon);
 
-  /// Disables low quality to make sure the polygon exactly matches
-  /// [innerPolygon].
   @override
   List<Offset> get lowQualityPolygon => highQualityPolygon;
 
@@ -162,5 +147,35 @@ class LaserStroke extends Stroke {
     _innerPolygon = null;
     _innerPath = null;
     super.markPolygonNeedsUpdating();
+  }
+
+  /// Override to apply a glow effect and gradient color
+  @override
+  Path get outerPath {
+    final glowPath = Path();
+    final glowWidth = options.size * 2.0; // Glow width
+    for (final point in highQualityPolygon) {
+      glowPath.addOval(Rect.fromCircle(center: point, radius: glowWidth));
+    }
+    return glowPath;
+  }
+
+  @override
+  Paint get paint {
+    final gradientPaint = Paint()
+      ..shader = _createGradientShader()
+      ..style = PaintingStyle.fill;
+
+    return gradientPaint;
+  }
+
+  Shader _createGradientShader() {
+    return LinearGradient(
+      colors: [innerColor, outerColor],
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+    ).createShader(
+      Rect.fromLTWH(0, 0, options.size, options.size),
+    );
   }
 }
