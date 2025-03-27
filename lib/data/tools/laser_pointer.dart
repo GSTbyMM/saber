@@ -5,6 +5,7 @@ import 'package:saber/data/editor/page.dart';
 import 'package:saber/data/extensions/list_extensions.dart';
 import 'package:saber/data/tools/_tool.dart';
 import 'package:saber/data/tools/pen.dart';
+import 'dart:ui' as ui;
 
 class LaserPointer extends Tool {
   LaserPointer._();
@@ -20,9 +21,9 @@ class LaserPointer extends Tool {
 
   final pressureEnabled = false;
   final options = StrokeOptions(
-    size: 2.0, // Thinner stroke size
-    smoothing: 0.8, // Slightly smoother
-    streamline: 0.9, // More aligned stroke
+    size: 2.0, // Base size for dynamic thickness
+    smoothing: 0.85, // Increased smoothing for better flow
+    streamline: 0.95, // Higher streamline for more alignment
   );
 
   /// List of timings that correspond to the delay between each point
@@ -58,7 +59,15 @@ class LaserPointer extends Tool {
 
   void onDragUpdate(Offset position) {
     isDrawing = true;
+
+    // Calculate velocity for dynamic thickness
+    final velocity = Pen.currentStroke?.points.isNotEmpty == true
+        ? (position - Pen.currentStroke!.points.last).distance
+        : 0.0;
+    final dynamicSize = (options.size * (1.0 + velocity / 10)).clamp(1.5, 4.0);
+
     Pen.currentStroke?.addPoint(position);
+    Pen.currentStroke?.options.size = dynamicSize; // Adjust thickness dynamically
     strokePointDelays.add(_stopwatch.elapsed);
     _stopwatch.reset();
   }
@@ -81,7 +90,7 @@ class LaserPointer extends Tool {
     return stroke;
   }
 
-  static const _fadeOutDelay = Duration(milliseconds: 1500); // Faster fade-out
+  static const _fadeOutDelay = Duration(milliseconds: 1200); // Faster fade-out
   @visibleForTesting
   static void fadeOutStroke({
     required Stroke stroke,
@@ -91,17 +100,21 @@ class LaserPointer extends Tool {
   }) async {
     await Future.delayed(_fadeOutDelay);
 
-    for (final delay in strokePointDelays) {
-      await Future.delayed(delay * 0.8); // Reduce delay between points
+    for (int i = 0; i < strokePointDelays.length; i++) {
+      final delay = strokePointDelays[i];
+      await Future.delayed(delay * 0.7); // Reduce delay between points
+
+      // Smooth fade-out with dynamic opacity
+      stroke.color = stroke.color.withOpacity(
+          ((strokePointDelays.length - i) / strokePointDelays.length)
+              .clamp(0.0, 1.0));
 
       stroke.popFirstPoint();
       redrawPage();
 
       if (isDrawing) {
-        // if the user starts drawing again, wait until they stop
-        const waitTime = Duration(milliseconds: 100);
+        const waitTime = Duration(milliseconds: 80);
         while (isDrawing) await Future.delayed(waitTime);
-        // now wait the normal delay before continuing
         await Future.delayed(_fadeOutDelay - waitTime);
       }
     }
@@ -135,10 +148,25 @@ class LaserStroke extends Stroke {
     points.addAll(stroke.points);
   }
 
+  // Add gradient and glow effect
+  @override
+  void draw(Canvas canvas) {
+    final paint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset.zero,
+        Offset(0, options.size),
+        [LaserPointer.innerColor, LaserPointer.outerColor],
+      )
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, options.size * 0.5); // Glow effect
+
+    final path = Stroke.smoothPathFromPolygon(highQualityPolygon);
+    canvas.drawPath(path, paint);
+  }
+
   List<Offset>? _innerPolygon;
   List<Offset> get innerPolygon => _innerPolygon ??= getStroke(
         points,
-        options: options.copyWith(size: options.size * 0.3), // Thinner inner line
+        options: options.copyWith(size: options.size * 0.25), // Thinner inner line
       );
 
   Path? _innerPath;
